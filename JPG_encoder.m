@@ -45,13 +45,16 @@ function encode(image, quality)
     y = 0;
 
     rgb = generateRGB(image);
+    ycbcr = generateYCbCr(image);
     global RGB_YUV_TABLE
     
     global fdtbl_Y
+    global fdtbl2_Y
     global YDC_HT
     global YAC_HT            
     
     global fdtbl_UV
+    global fdtbl2_UV
     global UVDC_HT
     global UVAC_HT
                      
@@ -70,6 +73,10 @@ function encode(image, quality)
             YDU = zeros(1,64);
             UDU = zeros(1,64);
             VDU = zeros(1,64);
+      
+            YDU2 = zeros(1,64);
+            UDU2 = zeros(1,64);
+            VDU2 = zeros(1,64);
             
             for pos=0 : 63
                 
@@ -88,16 +95,44 @@ function encode(image, quality)
                 end
 
                 r = rgb(p+1);
+                YDU(pos+1) = ycbcr(p+1) - 121;  % Por alguna razon, les tengo que restar este valor. Sino no da como el original.
+%                 if(n_blocks==0)
+%                     YDU2
+%                 end
                 p = p+1;
                 g = rgb(p+1);
+                UDU(pos+1) = ycbcr(p+1) - 131;
+%                 if(n_blocks==0)
+%                     UDU2
+%                 end
                 p = p+1;
                 b = rgb(p+1);
+                VDU(pos+1) = ycbcr(p+1) - 122;
+%                 if(n_blocks==88)
+%                     VDU2
+%                 end
                 p = p+1;
 
                 % use lookup table (slightly faster)
-                YDU(pos+1) = floor(bitsra((RGB_YUV_TABLE(r+1)      + RGB_YUV_TABLE(g+256+1)  + RGB_YUV_TABLE(b+512+1)),16))-128;
-                UDU(pos+1) = floor(bitsra((RGB_YUV_TABLE(r+768+1)  + RGB_YUV_TABLE(g+1024+1) + RGB_YUV_TABLE(b+1280+1)),16))-128;
-                VDU(pos+1) = floor(bitsra((RGB_YUV_TABLE(r+1280+1) + RGB_YUV_TABLE(g+1536+1) + RGB_YUV_TABLE(b+1792+1)),16))-128;
+%                 YDU(pos+1) = floor(bitsra((RGB_YUV_TABLE(r+1)      + RGB_YUV_TABLE(g+256+1)  + RGB_YUV_TABLE(b+512+1)),16))-128;
+%                 if(n_blocks==0)
+%                     YDU
+%                 end
+%                 UDU(pos+1) = floor(bitsra((RGB_YUV_TABLE(r+768+1)  + RGB_YUV_TABLE(g+1024+1) + RGB_YUV_TABLE(b+1280+1)),16))-128;
+%                 if(n_blocks==0)
+%                     UDU
+%                 end                
+%                 VDU(pos+1) = floor(bitsra((RGB_YUV_TABLE(r+1280+1) + RGB_YUV_TABLE(g+1536+1) + RGB_YUV_TABLE(b+1792+1)),16))-128;
+%                 if(n_blocks==88)
+%                     VDU
+%                 end 
+%                 
+%                 YDU(pos+1) = floor(ycbcr(p+1));
+%                 p = p+1;
+%                 UDU(pos+1) = floor(ycbcr(p+1));
+%                 p = p+1;
+%                 VDU(pos+1) = floor(ycbcr(p+1));
+%                 p = p+1;
 
             end
 
@@ -106,9 +141,9 @@ function encode(image, quality)
             %end
             
             
-            DCY = processDU(YDU, fdtbl_Y, DCY, YDC_HT, YAC_HT);
-            DCU = processDU(UDU, fdtbl_UV, DCU, UVDC_HT, UVAC_HT);
-            DCV = processDU(VDU, fdtbl_UV, DCV, UVDC_HT, UVAC_HT);
+            DCY = processDU(YDU, fdtbl2_Y, DCY, YDC_HT, YAC_HT);
+            DCU = processDU(UDU, fdtbl2_Y, DCU, UVDC_HT, UVAC_HT);
+            DCV = processDU(VDU, fdtbl2_Y, DCV, UVDC_HT, UVAC_HT);
 
 %             if(n_blocks==0)
 %                 byteout
@@ -130,7 +165,7 @@ function encode(image, quality)
         writeBits(fillbits);
     end
 
-    writeWord(hex2dec('FFD9')); % EOI
+    writeWord(hex2dec('FFD9')); % EOI (End of Image)
     
     fileID = fopen('test.jpg','w');
     fwrite(fileID,byteout);
@@ -148,14 +183,20 @@ end
 % HTAC: Huffman table (AC)
 %
 function DCY = processDU(CDU, fdtbl, DC, HTDC, HTAC)
-            
+
+    global n_blocks
+
     EOB = HTAC(1,:);
     M16zeroes = HTAC(hex2dec('F0')+1,:);
     I16 = 16;
     I63 = 63;
     I64 = 64;
-    DU_DCT = fDCTQuant(CDU, fdtbl);
-    global n_blocks
+    %DU_DCT = fDCTQuant(CDU, fdtbl);
+    DU_DCT = DCTnQuant(CDU, fdtbl);
+%     if(n_blocks==0)
+%         DU_DCT
+%         DU_DCT2
+%     end
     
     % ZigZag reorder
     global ZigZag
@@ -239,7 +280,32 @@ function DCY = processDU(CDU, fdtbl, DC, HTDC, HTAC)
     
 end
 
+function dct_quant = DCTnQuant(data, quant_table) 
+
+    global n_blocks
+    data_aux = dct2(reshape(data,8,8)');
+    data_aux = reshape(data_aux',1,64);
+    
+    % Quantize/descale the coefficients
+    dct_quant = zeros(1,64);
+    for i=0 : 63
+    
+        % Apply the quantization and scaling factor & Round to nearest integer
+        dct_quant(i+1) = round(data_aux(i+1)./quant_table(i+1));
+%         if (fdctquant > 0.0)
+%             dct_quant(i+1) = floor(value+0.5);
+%         else
+%             dct_quant(i+1) = ceil(value-0.5);
+%         end
+        %outputfDCTQuant(i] = fround(fdctquant);
+
+    end
+    
+end
+
 function outputfDCTQuant = fDCTQuant(data, fdtbl)
+       
+    % https://www.nayuki.io/res/fast-discrete-cosine-transform-algorithms/FastDct.js
     % Pass 1: process rows.
     dataOff = 1;
     I8 = 8;
@@ -367,6 +433,7 @@ function outputfDCTQuant = fDCTQuant(data, fdtbl)
 %         data
 %     end
     
+    
     % Quantize/descale the coefficients
     outputfDCTQuant = zeros(1,64);
     for i=0 : I64-1
@@ -391,6 +458,29 @@ end
 
 % Porque en el codigo de javascript se ve que la imagen esta guardada pixel
 % por pixel con los valores r, g y b consecutivos.
+% Para aprovechar, convierto aca a YCbCr.
+function ycbcr = generateYCbCr(image)
+
+    image_ycbcr = rgb2ycbcr(image);
+    [height, width, channels] = size(image_ycbcr);
+    ycbcr = zeros(1,height*width*channels);
+    
+    i = 1;
+    for row=1 : height
+        for col=1 : width
+            ycbcr(i) = image_ycbcr(row,col,1);
+            i = i+1;
+            ycbcr(i) = image_ycbcr(row,col,2);
+            i = i+1;
+            ycbcr(i) = image_ycbcr(row,col,3);
+            i = i+1;
+        end
+    end
+    
+    %rgb(1:64)
+    
+end
+
 function rgb = generateRGB(image)
 
     [height, width, channels] = size(image);
@@ -411,8 +501,6 @@ function rgb = generateRGB(image)
     %rgb(1:64)
     
 end
-
-
 
 function setQuality(quality)
 
@@ -515,6 +603,9 @@ function initQuantTables(sf)
     
     end
     
+    % https://github.com/briandonahue/FluxJpeg.Core/blob/master/FJCore/FDCT.cs
+    % aanScaleFactor 
+    % https://github.com/dragon66/icafe/blob/master/src/com/icafe4j/image/util/DCT.java
     aasf = [
         1.0 1.387039845 1.306562965 1.175875602 ...
         1.0 0.785694958 0.541196100 0.275899379
@@ -539,6 +630,26 @@ function initQuantTables(sf)
     
     end
 
+    
+    global fdtbl2_Y
+    fdtbl2_Y = zeros(1,64);
+    global fdtbl2_UV
+    fdtbl2_UV = zeros(1,64);
+
+    k = 1;
+   
+    for row=1 : 8
+    
+        for col=1 : 8
+        
+            fdtbl2_Y(k)  = YTable(ZigZag(k));
+            fdtbl2_UV(k) = UVTable(ZigZag(k));
+            k = k+1;
+        
+        end
+    
+    end
+    
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -641,7 +752,7 @@ function writeDHT()
 end
 
 function writeSOS()
-    writeWord(hex2dec('FFDA')); % marker
+    writeWord(hex2dec('FFDA')); % marker (beggining of Start of Scan) 
     writeWord(12);              % length
     writeByte(3);               % nrofcomponents
     writeByte(1);               % IdY
