@@ -25,16 +25,16 @@ function encode(image, quality)
     writeWord(hex2dec('FFD8')); % SOI
     writeAPP0();
     writeDQT();
+
     [height, width, channels] = size(image);
     writeSOF0(width, height);
     writeDHT();
     writeSOS();
-
+    
     % Encode 8x8 macroblocks
     DCY = 0;
     DCU = 0;
-    DCV = 0;
-
+    DCV = 0; 
     % creo que son global
     bytenew = 0;
     bytepos = 7;
@@ -105,9 +105,14 @@ function encode(image, quality)
             %    YDU
             %end
             
+            
             DCY = processDU(YDU, fdtbl_Y, DCY, YDC_HT, YAC_HT);
             DCU = processDU(UDU, fdtbl_UV, DCU, UVDC_HT, UVAC_HT);
             DCV = processDU(VDU, fdtbl_UV, DCV, UVDC_HT, UVAC_HT);
+
+%             if(n_blocks==0)
+%                 byteout
+%             end
             
             x = x+(8*3);
             n_blocks = n_blocks+1;
@@ -116,76 +121,22 @@ function encode(image, quality)
         y = y+8;
         
     end
+
+    % Do the bit alignment of the EOI marker
+    if( bytepos >= 0 )
+        fillbits = zeros(1,2);
+        fillbits(2) = bytepos+1;
+        fillbits(1) = bitsll(bytepos+1,1)-1;
+        writeBits(fillbits);
+    end
+
+    writeWord(hex2dec('FFD9')); % EOI
     
-    
-    fileID = fopen('test.bin','w');
-    fwrite(fileID,byteout,'char');
+    fileID = fopen('test.jpg','w');
+    fwrite(fileID,byteout);
     fclose(fileID);
-    
+    %byteout
 end
-
-
-% 
-% 			
-% 			
-%             while(y < height){
-%                 x = 0;
-%                 while(x < quadWidth){
-% 					start = quadWidth * y + x;
-% 					p = start;
-% 					col = -1;
-% 					row = 0;
-% 
-% 		
-% 					x+=32;
-% 					
-% 					n_blocks = n_blocks+1;
-% 				}
-% 				y+=8;
-% 			}
-% 			console.log(n_blocks);
-% 
-%             ////////////////////////////////////////////////////////////////
-% 
-%             // Do the bit alignment of the EOI marker
-%             if ( bytepos >= 0 ) {
-%                 var fillbits = [];
-%                 fillbits[1] = bytepos+1;
-%                 fillbits[0] = (1<<(bytepos+1))-1;
-%                 writeBits(fillbits);
-%             }
-% 
-%             writeWord(0xFFD9); //EOI
-% 
-%             if(toRaw) {
-%                 var len = byteout.length;
-%                 var data = new Uint8Array(len);
-% 
-%                 for (var i=0; i<len; i++ ) {
-%                     data[i] = byteout[i].charCodeAt();
-%                 }
-% 
-%                 //cleanup
-%                 byteout = [];
-% 
-%                 // benchmarking
-%                 var duration = new Date().getTime() - time_start;
-%                 console.log('Encoding time: '+ duration + 'ms');
-% 
-%                 return data;
-%             }
-% 
-%             var jpegDataUri = 'data:image/jpeg;base64,' + btoa(byteout.join(''));
-% 
-%             byteout = [];
-% 
-%             // benchmarking
-%             var duration = new Date().getTime() - time_start;
-%             console.log('Encoding time: '+ duration + 'ms');
-% 
-%             return jpegDataUri
-%     }
-
 
 %
 % DCY = processDU(YDU, fdtbl_Y, DCY, YDC_HT, YAC_HT);
@@ -205,11 +156,6 @@ function DCY = processDU(CDU, fdtbl, DC, HTDC, HTAC)
     I64 = 64;
     DU_DCT = fDCTQuant(CDU, fdtbl);
     global n_blocks
-%             if(n_blocks==3214||n_blocks==1786||n_blocks==4085||n_blocks==2696||n_blocks==672) {
-%     if(n_blocks==672)
-%         n_blocks
-%         DU_DCT
-%     end
     
     % ZigZag reorder
     global ZigZag
@@ -256,42 +202,42 @@ function DCY = processDU(CDU, fdtbl, DC, HTDC, HTAC)
             
         writeBits(EOB);
 % 
-        if(n_blocks==0)
-            byteout
-        end
+%         if(n_blocks==0)
+%             byteout
+%         end
         DCY = DC;
         return;
     end
 
-
-
-
-    DCY = 1;
+    i = 1;
+    while( i<=end0pos )
+        startpos = i;
+        while(DU(i+1)==0 && (i<=end0pos))
+            i = i+1;            
+        end
+        nrzeroes = i-startpos;
+        if( nrzeroes >= I16 )
+            lng = floor(bitsra(nrzeroes,4));
+            for nrmarker=1 : lng
+                writeBits(M16zeroes);
+            end
+            nrzeroes = bitand(nrzeroes, hex2dec('F'));
+        end
+        pos = 32767+DU(i+1);
+        writeBits(HTAC(floor(bitsll(nrzeroes,4))+category(pos+1)+1,:));
+%         if(n_blocks==53)
+%             HTAC(floor(bitsll(nrzeroes,4))+category(pos+1)+1,:)
+%             bitcode(pos+1,:)
+%         end
+        writeBits(bitcode(pos+1,:));
+        i = i+1;
+    end
+    if( end0pos~=I63 )
+        writeBits(EOB);
+    end
+    DCY = DC;
+    
 end
-%             var i = 1;
-%             var lng;
-%             while ( i <= end0pos ) {
-%                 var startpos = i;
-%                 for (; (DU[i]==0) && (i<=end0pos); ++i) {}
-%                 var nrzeroes = i-startpos;
-%                 if ( nrzeroes >= I16 ) {
-%                     lng = nrzeroes>>4;
-%                     for (var nrmarker=1; nrmarker <= lng; ++nrmarker)
-%                         writeBits(M16zeroes);
-%                     nrzeroes = nrzeroes&0xF;
-%                 }
-%                 pos = 32767+DU[i];
-%                 writeBits(HTAC[(nrzeroes<<4)+category[pos]]);
-%                 writeBits(bitcode[pos]);
-%                 i++;
-%             }
-%             if ( end0pos != I63 ) {
-%                 writeBits(EOB);
-%             }
-%             return DC;
-%         }
-
-
 
 function outputfDCTQuant = fDCTQuant(data, fdtbl)
     % Pass 1: process rows.
@@ -648,48 +594,48 @@ function writeDHT()
     writeByte(0);               % HTYDCinfo
     
     global std_dc_luminance_nrcodes
-    for i=1 : 16
-        writeByte(std_dc_luminance_nrcodes(i+1));
+    for i=0 : 15
+        writeByte(std_dc_luminance_nrcodes(i+1+1));
     end
     global std_dc_luminance_values
-    for i=1 : 11
-        writeByte(std_dc_luminance_values(i));
+    for i=0 : 11
+        writeByte(std_dc_luminance_values(i+1));
     end
     
     writeByte(hex2dec('10'));   % HTYACinfo
 
     global std_ac_luminance_nrcodes
-    for i=1 : 16
-        writeByte(std_ac_luminance_nrcodes(i+1));
+    for i=0 : 15
+        writeByte(std_ac_luminance_nrcodes(i+1+1));
     end
 
     global std_ac_luminance_values
-    for i=1 : 161
-        writeByte(std_ac_luminance_values(i));
+    for i=0 : 161
+        writeByte(std_ac_luminance_values(i+1));
     end
 
     writeByte(1);               % HTUDCinfo
     
     global std_dc_chrominance_nrcodes
-    for i=1 : 16
-        writeByte(std_dc_chrominance_nrcodes(i+1));
+    for i=0 : 15
+        writeByte(std_dc_chrominance_nrcodes(i+1+1));
     end
 
     global std_dc_chrominance_values
-    for i=1 : 11
-        writeByte(std_dc_chrominance_values(i));
+    for i=0 : 11
+        writeByte(std_dc_chrominance_values(i+1));
     end
     
     writeByte(hex2dec('11'));   % HTUACinfo
 
     global std_ac_chrominance_nrcodes
-    for i=1 : 16
-        writeByte(std_ac_chrominance_nrcodes(i+1));
+    for i=0 : 15
+        writeByte(std_ac_chrominance_nrcodes(i+1+1));
     end
     
     global std_ac_chrominance_values
-    for i=1 : 161
-        writeByte(std_ac_chrominance_values(i));
+    for i=0 : 161
+        writeByte(std_ac_chrominance_values(i+1));
     end
     
 end

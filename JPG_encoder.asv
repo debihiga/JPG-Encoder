@@ -198,7 +198,7 @@ end
 %
 function DCY = processDU(CDU, fdtbl, DC, HTDC, HTAC)
             
-    EOB = HTAC(hex2dec('00')+1,:);
+    EOB = HTAC(1,:);
     M16zeroes = HTAC(hex2dec('F0')+1,:);
     I16 = 16;
     I63 = 63;
@@ -234,31 +234,59 @@ function DCY = processDU(CDU, fdtbl, DC, HTDC, HTAC)
     if(Diff==0) 
         writeBits(HTDC(1,:)); % Diff might be 0
     else
-        pos = 32767+Diff+1;
-        writeBits(HTDC(category(pos),:));
-        writeBits(bitcode(pos,:));
+        pos = 32767+Diff;
+        writeBits(HTDC(category(pos+1)+1,:));
+        writeBits(bitcode(pos+1,:));
     end
 
     % Encode ACs
     end0pos = 63;       % was const... which is crazy
-    while((end0pos>0)&&(DU[end0pos]==0); end0pos--)
+    while( (end0pos>0)&&(DU(end0pos+1)==0) )
         end0pos = end0pos-1;
     end
-    //end0pos = first element in reverse order !=0
-    if ( end0pos == 0) {
-    writeBits(EOB);
-    return DC;
-    }
-
+    %end0pos = first element in reverse order !=0
     global byteout
-    if(n_blocks==0)
-        n_blocks
-        byteout
+    global bytepos
+    global bytenew
+    if( end0pos == 0) 
+%         if(n_blocks==0)
+%             bytepos
+%             bytenew
+%         end
+            
+        writeBits(EOB);
+% 
+%         if(n_blocks==0)
+%             byteout
+%         end
+        DCY = DC;
+        return;
     end
 
+    i = 1;
+    while( i <= end0pos )
+        startpos = i;
+        while(DU(i+1)==0 && (i<=end0pos))
+            i = i+1;            
+        end
+        nrzeroes = i-startpos;
+        if( nrzeroes >= I16 )
+            lng = floor(bitsra(nrzeroes,4));
+            for nrmarker=1 : lng
+                writeBits(M16zeroes);
+            end
+            nrzeroes = bitand(nrzeroes, hex2dec('F'));
+        end
+        pos = 32767+DU(i+1);
+        writeBits(HTAC(bitsra(nrzeroes,4)+category(pos+1)+1));
+        writeBits(bitcode[pos]);
+        i++;
+    end
+    if( end0pos != I63 )
+        writeBits(EOB);
+    end
+    DCY = DC;
 
-
-    DCY = 1;
 end
 %             var i = 1;
 %             var lng;
@@ -593,14 +621,27 @@ end
 
 function writeBits(bs)
 
+    global n_blocks
+
     global bytenew
     global bytepos
     value = bs(1);
     posval = bs(2)-1;
     while( posval >= 0 )
-        if( bitand(value, bitsll(1,posval)) )
+%          if(n_blocks==0)
+%              bs
+%              value
+%              posval
+%              bytenew
+%              bytepos
+%          end
+        if( bitand(value, bitsll(1,posval))~=0 )
             bytenew = bitor(bytenew, bitsll(1, bytepos));
         end
+%          if(n_blocks==0)
+%              bytenew
+%          end
+
         posval = posval-1;
         bytepos = bytepos-1;
         if(bytepos < 0)
@@ -608,13 +649,15 @@ function writeBits(bs)
                 writeByte(hex2dec('FF'));
                 writeByte(0);
             else
+%                 if(n_blocks==0)
+%                     bytenew
+%                 end
                 writeByte(bytenew);
             end
-            bytepos=7;
-            bytenew=0;
+            bytepos = 7;
+            bytenew = 0;
         end
     end
-    
 end
 
 function writeDHT()
@@ -824,7 +867,8 @@ function initHuffmanTbl()
         ];
     %std_ac_luminance_values = add1ToArray(std_ac_luminance_values);
     YAC_HT = computeHuffmanTbl(std_ac_luminance_nrcodes, std_ac_luminance_values);
-
+    %YAC_HT
+    
     global UVAC_HT
     global std_ac_chrominance_nrcodes
     global std_ac_chrominance_values
@@ -854,6 +898,7 @@ function initHuffmanTbl()
         ];
         %std_ac_chrominance_values = add1ToArray(std_ac_chrominance_values);
         UVAC_HT = computeHuffmanTbl(std_ac_chrominance_nrcodes, std_ac_chrominance_values);
+        %UVAC_HT
 end
 
 function initCategoryNumber()
@@ -918,14 +963,14 @@ end
 function HT = computeHuffmanTbl(nrcodes, std_table)
     
     codevalue = 0;
-    pos_in_table = 1;
+    pos_in_table = 0;
     HT = [];
     
     for i=1 : 16
         for j=1 : nrcodes(i+1)
             %HT(std_table(pos_in_table)) = [];
-            HT(std_table(pos_in_table)+1, 1) = codevalue;
-            HT(std_table(pos_in_table)+1, 2) = i;
+            HT(std_table(pos_in_table+1)+1, 1) = codevalue; % Sumarle este 1 me arreglo algo...
+            HT(std_table(pos_in_table+1)+1, 2) = i;
             pos_in_table = pos_in_table + 1;
             codevalue = codevalue + 1;
         end
