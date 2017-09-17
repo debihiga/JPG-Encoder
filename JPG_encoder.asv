@@ -22,9 +22,9 @@ function encode(image, quality)
     bytepos = 7;
 
     % Add JPEG headers
-    writeWord(hex2dec('FFD8')); % SOI
-    writeAPP0();
-    writeDQT();
+    byteout = writeWord(byteout, hex2dec('FFD8')); % SOI
+    byteout = writeAPP0(byteout);
+    writeDQT(byteout, YTable, UVTable));
 
     [height, width, channels] = size(image);
     writeSOF0(width, height);
@@ -48,11 +48,11 @@ function encode(image, quality)
     ycbcr = generateYCbCr(image);
     global RGB_YUV_TABLE
     
-    global fdtbl_Y
+    global YTable
     global YDC_HT
     global YAC_HT            
     
-    global fdtbl_UV
+    global UVTable
     global UVDC_HT
     global UVAC_HT
                      
@@ -139,9 +139,9 @@ function encode(image, quality)
             %end
             
             
-            DCY = processDU(YDU, fdtbl_Y, Y, DCY, YDC_HT, YAC_HT);
-            DCU = processDU(UDU, fdtbl_UV, U, DCU, UVDC_HT, UVAC_HT);
-            DCV = processDU(VDU, fdtbl_UV, U, DCV, UVDC_HT, UVAC_HT);
+            DCY = processDU(YDU, YTable, DCY, YDC_HT, YAC_HT);
+            DCU = processDU(UDU, UVTable, DCU, UVDC_HT, UVAC_HT);
+            DCV = processDU(VDU, UVTable, DCV, UVDC_HT, UVAC_HT);
 
 %             if(n_blocks==0)
 %                 byteout
@@ -163,7 +163,7 @@ function encode(image, quality)
         writeBits(fillbits);
     end
 
-    writeWord(hex2dec('FFD9')); % EOI
+    byteout = writeWord(byteout, hex2dec('FFD9')); % EOI (End of Image)
     
     fileID = fopen('test.jpg','w');
     fwrite(fileID,byteout);
@@ -180,7 +180,7 @@ end
 % HTDC: Huffman table (DC)
 % HTAC: Huffman table (AC)
 %
-function DCY = processDU(CDU, fdtbl, fdtbl_2, DC, HTDC, HTAC)
+function DCY = processDU(CDU, fdtbl, DC, HTDC, HTAC)
 
     global n_blocks
 
@@ -189,12 +189,12 @@ function DCY = processDU(CDU, fdtbl, fdtbl_2, DC, HTDC, HTAC)
     I16 = 16;
     I63 = 63;
     I64 = 64;
-    DU_DCT = fDCTQuant(CDU, fdtbl);
-    DU_DCT2 = DCTnQuant(CDU, fdtbl_2);
-    if(n_blocks==0)
-        DU_DCT
-        DU_DCT2
-    end
+    %DU_DCT = fDCTQuant(CDU, fdtbl);
+    DU_DCT = DCTnQuant(CDU, fdtbl);
+%     if(n_blocks==0)
+%         DU_DCT
+%         DU_DCT2
+%     end
     
     % ZigZag reorder
     global ZigZag
@@ -203,8 +203,6 @@ function DCY = processDU(CDU, fdtbl, fdtbl_2, DC, HTDC, HTAC)
         DU(ZigZag(j+1))=DU_DCT(j+1);
     end
 
-    Diff = DU(1) - DC;
-    DC = DU(1);
 
     
 %     if(n_blocks==0)
@@ -212,18 +210,45 @@ function DCY = processDU(CDU, fdtbl, fdtbl_2, DC, HTDC, HTAC)
 %         Diff
 %         DC
 %     end
-    
-    % Encode DC
+
     global category
     global bitcode
+
+    % Encode DC
+    % http://www.impulseadventure.com/photo/jpeg-huffman-coding.html
+    % https://users.ece.utexas.edu/~ryerraballi/MSB/pdfs/M4L1.pdf
+    % http://www.dmi.unict.it/~battiato/EI_MOBILE0708/JPEG%20(Bruna).pdf
+    % Differential Pulse Code Modulation (DPCM): 
+    % Encode the difference between the current and previous 8x8 block.
+    % Example:
+    % DC(1) = 4 (actual)
+    % DC    = 2 (previous)
+    % Diff = DU(1)-DC = 2
+    % pos = 32767+Diff = 32769
+    % category(pos+1) = 2
+    % HTDC(category(pos+1)+1,:) = [3 3]
+    % bitcode(pos+1,:) = [2 2]
+     
+    Diff = DU(1) - DC;
+    DC = DU(1);
+
     if(Diff==0) 
         writeBits(HTDC(1,:)); % Diff might be 0
     else
         pos = 32767+Diff;
         writeBits(HTDC(category(pos+1)+1,:));
         writeBits(bitcode(pos+1,:));
+        if(n_blocks==179)
+            DU(1)
+            DC
+            Diff
+            category(pos+1)
+            HTDC(category(pos+1)+1,:)
+            bitcode(pos+1,:)
+        end
     end
-
+    
+    
     % Encode ACs
     end0pos = 63;       % was const... which is crazy
     while( (end0pos>0)&&(DU(end0pos+1)==0) )
@@ -289,12 +314,12 @@ function dct_quant = DCTnQuant(data, quant_table)
     for i=0 : 63
     
         % Apply the quantization and scaling factor & Round to nearest integer
-        value = data_aux(i+1)*quant_table(i+1);
-        if (fdctquant > 0.0)
-            dct_quant(i+1) = floor(value+0.5);
-        else
-            dct_quant(i+1) = ceil(value-0.5);
-        end
+        dct_quant(i+1) = round(data_aux(i+1)./quant_table(i+1));
+%         if (fdctquant > 0.0)
+%             dct_quant(i+1) = floor(value+0.5);
+%         else
+%             dct_quant(i+1) = ceil(value-0.5);
+%         end
         %outputfDCTQuant(i] = fround(fdctquant);
 
     end
@@ -437,7 +462,7 @@ function outputfDCTQuant = fDCTQuant(data, fdtbl)
     for i=0 : I64-1
     
         % Apply the quantization and scaling factor & Round to nearest integer
-        fdctquant = data_aux(i+1)*fdtbl(i+1);
+        fdctquant = data(i+1)*fdtbl(i+1);
         if (fdctquant > 0.0)
             outputfDCTQuant(i+1) = floor(fdctquant+0.5);
         else
@@ -570,6 +595,7 @@ function initQuantTables(sf)
         end
                 
         YTable(ZigZag(i)) = t;
+        %YTable(i) = t; se ve peor
     
     end
 
@@ -598,7 +624,7 @@ function initQuantTables(sf)
         end
                 
         UVTable(ZigZag(i)) = t;
-    
+        %UVTable(i) = t; se ve peor
     end
     
     % https://github.com/briandonahue/FluxJpeg.Core/blob/master/FJCore/FDCT.cs
@@ -609,44 +635,25 @@ function initQuantTables(sf)
         1.0 0.785694958 0.541196100 0.275899379
         ];
 
-    global fdtbl_Y
-    fdtbl_Y = zeros(1,64);
-    global fdtbl_UV
-    fdtbl_UV = zeros(1,64);
+%     global fdtbl_Y
+%     fdtbl_Y = zeros(1,64);
+%     global fdtbl_UV
+%     fdtbl_UV = zeros(1,64);
+% 
+%     k = 1;
+%    
+%     for row=1 : 8
+%     
+%         for col=1 : 8
+%         
+%             fdtbl_Y(k)  = (1.0 / (YTable(ZigZag(k)) * aasf(row) * aasf(col) * 8.0));
+%             fdtbl_UV(k) = (1.0 / (UVTable(ZigZag(k)) * aasf(row) * aasf(col) * 8.0));
+%             k = k+1;
+%         
+%         end
+%     
+%     end
 
-    k = 1;
-   
-    for row=1 : 8
-    
-        for col=1 : 8
-        
-            fdtbl_Y(k)  = (1.0 / (YTable(ZigZag(k)) * aasf(row) * aasf(col) * 8.0));
-            fdtbl_UV(k) = (1.0 / (UVTable(ZigZag(k)) * aasf(row) * aasf(col) * 8.0));
-            k = k+1;
-        
-        end
-    
-    end
-
-    
-    global fdtbl2_Y
-    fdtbl2_Y = zeros(1,64);
-    global fdtbl_UV
-    fdtbl_UV = zeros(1,64);
-
-    k = 1;
-   
-    for row=1 : 8
-    
-        for col=1 : 8
-        
-            fdtbl_Y(k)  = (1.0 / (YTable(ZigZag(k)) * aasf(row) * aasf(col) * 8.0));
-            fdtbl_UV(k) = (1.0 / (UVTable(ZigZag(k)) * aasf(row) * aasf(col) * 8.0));
-            k = k+1;
-        
-        end
-    
-    end
     
 end
 
@@ -658,8 +665,10 @@ function writeBits(bs)
 
     global n_blocks
 
-    global bytenew
+    global bytenew  % son globales pero porque se tiene que guardar el ultimo valor de esta funcion.
     global bytepos
+    global byteout
+    
     value = bs(1);
     posval = bs(2)-1;
     while( posval >= 0 )
@@ -673,6 +682,10 @@ function writeBits(bs)
         if( bitand(value, bitsll(1,posval))~=0 )
             bytenew = bitor(bytenew, bitsll(1, bytepos));
         end
+        % Esto lo hace, creo yo.. porque a veces necesita escribir n bits y
+        % o no llega al byte o le sobra, entonces espera a la prox vuelta
+        % para escribir lo que reste.
+        
 %          if(n_blocks==0)
 %              bytenew
 %          end
@@ -681,13 +694,14 @@ function writeBits(bs)
         bytepos = bytepos-1;
         if(bytepos < 0)
             if(bytenew == hex2dec('FF'))
-                writeByte(hex2dec('FF'));
-                writeByte(0);
+                byteout = writeByte(byteout, hex2dec('FF'));
+                byteout = writeByte(byteout, 0);
+                % If the huffman coding scheme needed to write a 0xFF byte, then it writes a 0xFF followed by a 0x00 -- a process known as adding a stuff byte.
             else
 %                 if(n_blocks==0)
 %                     bytenew
 %                 end
-                writeByte(bytenew);
+                byteout = writeByte(byteout, bytenew);
             end
             bytepos = 7;
             bytenew = 0;
@@ -697,155 +711,107 @@ end
 
 function writeDHT()
 
-    writeWord(hex2dec('FFC4')); % marker
-    writeWord(hex2dec('1A2'));  % length
+    global byteout
 
-    writeByte(0);               % HTYDCinfo
+    byteout = writeWord(byteout, hex2dec('FFC4')); % marker
+    byteout = writeWord(byteout, hex2dec('1A2'));  % length
+    byteout = writeByte(byteout, 0);               % HTYDCinfo
     
     global std_dc_luminance_nrcodes
     for i=0 : 15
-        writeByte(std_dc_luminance_nrcodes(i+1+1));
+        byteout = writeByte(byteout, std_dc_luminance_nrcodes(i+1+1));
     end
     global std_dc_luminance_values
     for i=0 : 11
-        writeByte(std_dc_luminance_values(i+1));
+        byteout = writeByte(byteout, std_dc_luminance_values(i+1));
     end
     
-    writeByte(hex2dec('10'));   % HTYACinfo
+    byteout = writeByte(byteout, hex2dec('10'));   % HTYACinfo
 
     global std_ac_luminance_nrcodes
     for i=0 : 15
-        writeByte(std_ac_luminance_nrcodes(i+1+1));
+        byteout = writeByte(byteout, std_ac_luminance_nrcodes(i+1+1));
     end
 
     global std_ac_luminance_values
     for i=0 : 161
-        writeByte(std_ac_luminance_values(i+1));
+        byteout = writeByte(byteout, std_ac_luminance_values(i+1));
     end
 
-    writeByte(1);               % HTUDCinfo
+    byteout = writeByte(byteout, 1);               % HTUDCinfo
     
     global std_dc_chrominance_nrcodes
     for i=0 : 15
-        writeByte(std_dc_chrominance_nrcodes(i+1+1));
+        byteout = writeByte(byteout, std_dc_chrominance_nrcodes(i+1+1));
     end
 
     global std_dc_chrominance_values
     for i=0 : 11
-        writeByte(std_dc_chrominance_values(i+1));
+        byteout = writeByte(byteout, std_dc_chrominance_values(i+1));
     end
     
-    writeByte(hex2dec('11'));   % HTUACinfo
+    byteout = writeByte(byteout, hex2dec('11'));   % HTUACinfo
 
     global std_ac_chrominance_nrcodes
     for i=0 : 15
-        writeByte(std_ac_chrominance_nrcodes(i+1+1));
+        byteout = writeByte(byteout, std_ac_chrominance_nrcodes(i+1+1));
     end
     
     global std_ac_chrominance_values
     for i=0 : 161
-        writeByte(std_ac_chrominance_values(i+1));
+        byteout = writeByte(byteout, std_ac_chrominance_values(i+1));
     end
     
 end
 
 function writeSOS()
-    writeWord(hex2dec('FFDA')); % marker
-    writeWord(12);              % length
-    writeByte(3);               % nrofcomponents
-    writeByte(1);               % IdY
-    writeByte(0);               % HTY
-    writeByte(2);               % IdU
-    writeByte(hex2dec('11'));   % HTU
-    writeByte(3);               % IdV
-    writeByte(hex2dec('11'));   % HTV
-    writeByte(0);               % Ss
-    writeByte(hex2dec('3f'));   % Se
-    writeByte(0);               % Bf
+    global byteout
+    byteout = writeWord(byteout, hex2dec('FFDA')); % marker (beggining of Start of Scan) 
+    byteout = writeWord(byteout, 12);              % length
+
+    byteout = writeByte(byteout, 3);               % nrofcomponents
+    byteout = writeByte(byteout, 1);               % IdY
+    byteout = writeByte(byteout, 0);               % HTY
+    byteout = writeByte(byteout, 2);               % IdU
+    byteout = writeByte(byteout, hex2dec('11'));   % HTU
+    byteout = writeByte(byteout, 3);               % IdV
+    byteout = writeByte(byteout, hex2dec('11'));   % HTV
+    byteout = writeByte(byteout, 0);               % Ss
+    byteout = writeByte(byteout, hex2dec('3f'));   % Se
+    byteout = writeByte(byteout, 0);               % Bf
 end
 
 function writeSOF0(width, height)
-    writeWord(hex2dec('FFC0'));     % marker
-    writeWord(17);                  % length, truecolor YUV JPG
-    writeByte(8);                   % precision
-    writeWord(height);
-    writeWord(width);
-    writeByte(3);                   % nrofcomponents
-    writeByte(1);                   % IdY
-    writeByte(hex2dec('11'));       % HVY
-    writeByte(0);                   % QTY
-    writeByte(2);                   % IdU
-    writeByte(hex2dec('11'));       % HVU
-    writeByte(1);                   % QTU
-    writeByte(3);                   % IdV
-    writeByte(hex2dec('11'));       % HVV
-    writeByte(1);                   % QTV
-end
-    
-function writeDQT()
-
-    writeWord(hex2dec('FFDB')); % marker
-    writeWord(132);             % length
-    writeByte(0);
-    
-    global YTable
-    for i=1: 64
-        writeByte(YTable(i));
-    end
-    
-    writeByte(1);
-    
-    global UVTable
-    for i=1 : 64
-        writeByte(UVTable(i));
-    end
-    
-end
-            
-function writeAPP0()
-    writeWord(hex2dec('FFE0')); % marker
-    writeWord(16);              % length
-    writeByte(hex2dec('4A'));   % J
-    writeByte(hex2dec('46'));   % F
-    writeByte(hex2dec('49'));   % I
-    writeByte(hex2dec('46'));   % F
-    writeByte(0);               % = "JFIF",'\0'
-    writeByte(1);               % versionhi
-    writeByte(1);               % versionlo
-    writeByte(0);               % xyunits
-    writeWord(1);               % xdensity
-    writeWord(1);               % ydensity
-    writeByte(0);               % thumbnwidth
-    writeByte(0);               % thumbnheight
-end
-
-% No se usa.
-% function initCharLookupTable(){
-%     var sfcc = String.fromCharCode;
-%     for(var i=0; i < 256; i++){ ///// ACHTUNG // 255
-%         clt[i] = sfcc(i);
-%     }
-% }
-        
-function writeWord(value)
-    writeByte(bitand(floor(bitsra(value,8)), hex2dec('FF')));
-    writeByte(bitand(value, hex2dec('FF')));
-end
-
-function writeByte(value)
-     
     global byteout
-    byteout = [byteout, value];  % write char directly instead of converting later
-    % A diferencia del codigo en javascript, guardo en decimal y despues al
-    % escribir se guarda en char.
-    
+    byteout = writeWord(byteout, hex2dec('FFC0'));     % marker
+    byteout = writeWord(byteout, 17);                  % length, truecolor YUV JPG
+
+    byteout = writeByte(byteout, 8);                   % precision
+    byteout = writeWord(byteout, height);
+    byteout = writeWord(byteout, width);
+    byteout = writeByte(byteout, 3);                   % nrofcomponents
+    byteout = writeByte(byteout, 1);                   % IdY
+    byteout = writeByte(byteout, hex2dec('11'));       % HVY
+    byteout = writeByte(byteout, 0);                   % QTY
+    byteout = writeByte(byteout, 2);                   % IdU
+    byteout = writeByte(byteout, hex2dec('11'));       % HVU
+    byteout = writeByte(byteout, 1);                   % QTU
+    byteout = writeByte(byteout, 3);                   % IdV
+    byteout = writeByte(byteout, hex2dec('11'));       % HVV
+    byteout = writeByte(byteout, 1);                   % QTV
 end
+    
+            
+    
+
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % init
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 function init()
+    addpath(genpath('/write/'));
     % Create tables
     %initCharLookupTable();  % La funcion de Matlab char() hace esto.
     initHuffmanTbl();
@@ -862,8 +828,25 @@ function initHuffmanTbl()
     std_dc_luminance_values = [0 1 2 3 4 5 6 7 8 9 10 11];
     %std_dc_luminance_values = add1ToArray(std_dc_luminance_values);
     YDC_HT = computeHuffmanTbl(std_dc_luminance_nrcodes, std_dc_luminance_values);
+    %[dict,avglen] = huffmandict(std_dc_luminance_values,std_dc_luminance_nrcodes);
     %YDC_HT
-    
+% https://web.stanford.edu/class/ee398a/handouts/lectures/08-JPEG.pdf
+% YDC_HT =
+% code word     code length
+%      0        2
+%      2        3
+%      3        3
+%      4        3
+%      5        3
+%      6        3
+%     14        4
+%     30        5
+%     62        6
+%    126        7
+%    254        8
+%    510        9
+
+
     global UVDC_HT
     global std_dc_chrominance_nrcodes
     global std_dc_chrominance_values
@@ -871,8 +854,22 @@ function initHuffmanTbl()
     std_dc_chrominance_values = [0 1 2 3 4 5 6 7 8 9 10 11];
     %std_dc_chrominance_values = add1ToArray(std_dc_chrominance_values);
     UVDC_HT = computeHuffmanTbl(std_dc_chrominance_nrcodes, std_dc_chrominance_values);
-    %UVDC_HT
-
+%     UVDC_HT
+% UVDC_HT =
+% 
+%            0           2
+%            1           2
+%            2           2
+%            6           3
+%           14           4
+%           30           5
+%           62           6
+%          126           7
+%          254           8
+%          510           9
+%         1022          10
+%         2046          11
+        
     global YAC_HT
     global std_ac_luminance_nrcodes
     global std_ac_luminance_values
@@ -902,7 +899,261 @@ function initHuffmanTbl()
         ];
     %std_ac_luminance_values = add1ToArray(std_ac_luminance_values);
     YAC_HT = computeHuffmanTbl(std_ac_luminance_nrcodes, std_ac_luminance_values);
-    %YAC_HT
+%     YAC_HT
+% https://web.stanford.edu/class/ee398a/handouts/lectures/08-JPEG.pdf
+% YAC_HT =
+% 
+%           10           4
+%            0           2
+%            1           2
+%            4           3
+%           11           4
+%           26           5
+%          120           7
+%          248           8
+%         1014          10
+%        65410          16
+%        65411          16
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%           12           4
+%           27           5
+%          121           7
+%          502           9
+%         2038          11
+%        65412          16
+%        65413          16
+%        65414          16
+%        65415          16
+%        65416          16
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%           28           5
+%          249           8
+%         1015          10
+%         4084          12
+%        65417          16
+%        65418          16
+%        65419          16
+%        65420          16
+%        65421          16
+%        65422          16
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%           58           6
+%          503           9
+%         4085          12
+%        65423          16
+%        65424          16
+%        65425          16
+%        65426          16
+%        65427          16
+%        65428          16
+%        65429          16
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%           59           6
+%         1016          10
+%        65430          16
+%        65431          16
+%        65432          16
+%        65433          16
+%        65434          16
+%        65435          16
+%        65436          16
+%        65437          16
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%          122           7
+%         2039          11
+%        65438          16
+%        65439          16
+%        65440          16
+%        65441          16
+%        65442          16
+%        65443          16
+%        65444          16
+%        65445          16
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%          123           7
+%         4086          12
+%        65446          16
+%        65447          16
+%        65448          16
+%        65449          16
+%        65450          16
+%        65451          16
+%        65452          16
+%        65453          16
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%          250           8
+%         4087          12
+%        65454          16
+%        65455          16
+%        65456          16
+%        65457          16
+%        65458          16
+%        65459          16
+%        65460          16
+%        65461          16
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%          504           9
+%        32704          15
+%        65462          16
+%        65463          16
+%        65464          16
+%        65465          16
+%        65466          16
+%        65467          16
+%        65468          16
+%        65469          16
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%          505           9
+%        65470          16
+%        65471          16
+%        65472          16
+%        65473          16
+%        65474          16
+%        65475          16
+%        65476          16
+%        65477          16
+%        65478          16
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%          506           9
+%        65479          16
+%        65480          16
+%        65481          16
+%        65482          16
+%        65483          16
+%        65484          16
+%        65485          16
+%        65486          16
+%        65487          16
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%         1017          10
+%        65488          16
+%        65489          16
+%        65490          16
+%        65491          16
+%        65492          16
+%        65493          16
+%        65494          16
+%        65495          16
+%        65496          16
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%         1018          10
+%        65497          16
+%        65498          16
+%        65499          16
+%        65500          16
+%        65501          16
+%        65502          16
+%        65503          16
+%        65504          16
+%        65505          16
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%         2040          11
+%        65506          16
+%        65507          16
+%        65508          16
+%        65509          16
+%        65510          16
+%        65511          16
+%        65512          16
+%        65513          16
+%        65514          16
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%        65515          16
+%        65516          16
+%        65517          16
+%        65518          16
+%        65519          16
+%        65520          16
+%        65521          16
+%        65522          16
+%        65523          16
+%        65524          16
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%            0           0
+%         2041          11
+%        65525          16
+%        65526          16
+%        65527          16
+%        65528          16
+%        65529          16
+%        65530          16
+%        65531          16
+%        65532          16
+%        65533          16
+%        65534          16
     
     global UVAC_HT
     global std_ac_chrominance_nrcodes
@@ -970,9 +1221,9 @@ function initCategoryNumber()
         nrupper = bitsll(nrupper,1);
     end
     
-%     category(1)
+%      category(1)
 %     category(32769)
-%     bitcode(1,:)
+%      bitcode(1,:)
 %     bitcode(32769,:)
 
 end
