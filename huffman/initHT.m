@@ -6,7 +6,7 @@ function [  HT_Y_DC, HT_Y_DC_NVALUES, HT_Y_DC_VALUES, ...
     HT_Y_DC_NVALUES = [0 0 1 5 1 1 1 1 1 1 0 0 0 0 0 0 0];
     HT_Y_DC_VALUES = [0 1 2 3 4 5 6 7 8 9 10 11];
     HT_Y_DC = getHT(HT_Y_DC_NVALUES, HT_Y_DC_VALUES);
-
+    
     HT_Y_AC_NVALUES = [0 0 2 1 3 3 2 4 3 5 5 4 4 0 0 1 hex2dec('7d')];
     HT_Y_AC_VALUES = [
             hex2dec('01') hex2dec('02') hex2dec('03') hex2dec('00') hex2dec('04') hex2dec('11') hex2dec('05') hex2dec('12') ...
@@ -32,10 +32,12 @@ function [  HT_Y_DC, HT_Y_DC_NVALUES, HT_Y_DC_VALUES, ...
             hex2dec('f9') hex2dec('fa')
         ];
     HT_Y_AC = getHT(HT_Y_AC_NVALUES, HT_Y_AC_VALUES);
-
+    %HT_Y_AC
+    
     HT_CBCR_DC_NVALUES = [0 0 3 1 1 1 1 1 1 1 1 1 0 0 0 0 0];
     HT_CBCR_DC_VALUES = [0 1 2 3 4 5 6 7 8 9 10 11];
     HT_CBCR_DC = getHT(HT_CBCR_DC_NVALUES, HT_CBCR_DC_VALUES);       
+    HT_CBCR_DC
     
     HT_CBCR_AC_NVALUES = [0 0 2 1 2 4 4 3 4 7 5 4 4 0 1 2 hex2dec('77')];
     HT_CBCR_AC_VALUES = [
@@ -83,8 +85,8 @@ function HT = getHT(nvalues, values)
     code_word = 0;
     pos_in_values = 0;
     HT = [];
-    
-    for code_length=1 : 16
+    [rows, cols] = size(nvalues);
+    for code_length=1 : cols-1
         for j=1 : nvalues(code_length+1)
             HT(values(pos_in_values+1)+1, 1) = code_word;
             HT(values(pos_in_values+1)+1, 2) = code_length;

@@ -32,135 +32,153 @@ function JPG_encoder(filename, quality)
         HT_CBCR_DC,    HT_CBCR_DC_NVALUES, HT_CBCR_DC_VALUES, ...
         HT_CBCR_AC,    HT_CBCR_AC_NVALUES, HT_CBCR_AC_VALUES, ...
         bitcode, category] = init(quality);
+
     image = imread(filename);   
     
-    % Initialize bit writer
-    global byteout
-    byteout = [];
-    global bytenew
-    global bytepos
+    % Pad image.
+    [rows, cols] = size(image);
+    rows_rounded = ceil(rows/8);
+    cols_rounded = ceil(cols/8);
+    rows_pad = (rows_rounded*8) - rows;
+    cols_pad = (cols_rounded*8) - cols;
+    image = padarray(image,[rows_pad cols_pad],0,'post');
+    [height, width, channels] = size(image);
+
+    % Initialize output.
+    global jpeg_file
+    jpeg_file = [];
     writeBits(); % init this function's persistent variables.
 
     % Add JPEG headers
-    [height, width, channels] = size(image);
-    byteout = writeWord(byteout, hex2dec('FFD8')); % SOI
-    byteout = writeAPP0(byteout);
-    byteout = writeDQT(byteout, QT_Y, QT_CbCr);
-    byteout = writeSOF(byteout, width, height);    
-    byteout = writeDHT(byteout, HT_Y_DC_NVALUES,   HT_Y_DC_VALUES, ...
+    jpeg_file = writeWord(jpeg_file, hex2dec('FFD8')); % SOI
+    jpeg_file = writeAPP0(jpeg_file);
+    jpeg_file = writeDQT(jpeg_file, QT_Y, QT_CbCr);
+    jpeg_file = writeSOF(jpeg_file, width, height);    
+    jpeg_file = writeDHT(jpeg_file, HT_Y_DC_NVALUES,   HT_Y_DC_VALUES, ...
                                 HT_Y_AC_NVALUES,   HT_Y_AC_VALUES, ...
                                 HT_CBCR_DC_NVALUES, HT_CBCR_DC_VALUES, ...
                                 HT_CBCR_AC_NVALUES, HT_CBCR_AC_VALUES);
-    byteout = writeSOS(byteout);
+    jpeg_file = writeSOS(jpeg_file);
     
-    % Encode 8x8 macroblocks
-    DCY = 0;
-    DCU = 0;
-    DCV = 0; 
-    % creo que son global
-    %bytenew = 0;
-    %bytepos = 7;
+    im_ycbcr = my_rgb2ycbcr(image);
+    %figure; imshow(im_ycbcr);
+    Y = im_ycbcr(:, :, 1);
+    %figure; image(im_ycbcr(505:512,1:8,1)); colormap gray; axis image;
+    %figure; imshow(Y); axis image;
+    Cb = im_ycbcr(:, :, 2);
+    Cr = im_ycbcr(:, :, 3);
 
-    quadWidth = width*4;
-    tripleWidth = width*3;
-
-    y = 0;
-
-   % rgb = generateRGB(image);
-    ycbcr = generateYCbCr(image);
-                     
+    % DCT + quantization.
     global n_blocks
     n_blocks = 0;
-    
-    while(y < height)
-        
-        x = 0;
-        
-        while(x < tripleWidth)
-            
-            start = tripleWidth * y + x;
-            p = start;
-
-            YDU = zeros(1,64);
-            UDU = zeros(1,64);
-            VDU = zeros(1,64);
-      
-            YDU2 = zeros(1,64);
-            UDU2 = zeros(1,64);
-            VDU2 = zeros(1,64);
-            
-            for pos=0 : 63
-                
-                row = floor(bitsra(pos,3));    % /8
-                col = bitand(pos,7)*3;  % %8
-                p = start + ( row * tripleWidth ) + col;
-
-                if(y+row >= height)     % padding bottom
-                    p = p-(tripleWidth*(y+1+row-height));
-                    a = 1
-                end
-
-                if(x+col >= tripleWidth)  % padding right
-                    p = p-((x+col) - tripleWidth +4);
-                    b = 1
-                end
-
-%                 r = rgb(p+1);
-                YDU(pos+1) = ycbcr(p+1) - 121;  % Por alguna razon, les tengo que restar este valor. Sino no da como el original.
-%                 if(n_blocks==0)
-%                     YDU2
-%                 end
-                p = p+1;
-%                 g = rgb(p+1);
-                UDU(pos+1) = ycbcr(p+1) - 131;
-%                 if(n_blocks==0)
-%                     UDU2
-%                 end
-                p = p+1;
-%                 b = rgb(p+1);
-                VDU(pos+1) = ycbcr(p+1) - 122;
-%                 if(n_blocks==88)
-%                     VDU2
-%                 end
-                p = p+1;
-
-            end
-
-            %if(x==48 && y==16) 
-            %    YDU
-            %end
-            
-            
-            DCY = processDU(YDU, QT_Y, DCY, HT_Y_DC, HT_Y_AC);
-            DCU = processDU(UDU, QT_CbCr, DCU, HT_CBCR_DC, HT_CBCR_AC);
-            DCV = processDU(VDU, QT_CbCr, DCV, HT_CBCR_DC, HT_CBCR_AC);
-
-%             if(n_blocks==0)
-%                 byteout
-%             end
-            
-            x = x+(8*3);
+    DCY = 0;
+    DCU = 0;
+    DCV = 0;
+    for r=1 : 8 : height
+        for c=1 : 8 : width
+            DCY = processDU(Y(r:r+8-1, c:c+8-1),  QT_Y,     DCY, HT_Y_DC, HT_Y_AC);
+            DCU = processDU(Cb(r:r+8-1, c:c+8-1), QT_CbCr,  DCU, HT_CBCR_DC, HT_CBCR_AC);
+            DCV = processDU(Cr(r:r+8-1, c:c+8-1), QT_CbCr,  DCV, HT_CBCR_DC, HT_CBCR_AC);
             n_blocks = n_blocks+1;
         end
-        
-        y = y+8;
-        
     end
+    
+%     ycbcr = generateYCbCr(image);
+%                      
+%     global n_blocks
+%     n_blocks = 0;
+%     
+%     while(y < height)
+%         
+%         x = 0;
+%         
+%         while(x < tripleWidth)
+%             
+%             start = tripleWidth * y + x;
+%             p = start;
+% 
+%             YDU = zeros(1,64);
+%             UDU = zeros(1,64);
+%             VDU = zeros(1,64);
+%       
+%             YDU2 = zeros(1,64);
+%             UDU2 = zeros(1,64);
+%             VDU2 = zeros(1,64);
+%             
+%             for pos=0 : 63
+%                 
+%                 row = floor(bitsra(pos,3));    % /8
+%                 col = bitand(pos,7)*3;  % %8
+%                 p = start + ( row * tripleWidth ) + col;
+% 
+%                 if(y+row >= height)     % padding bottom
+%                     p = p-(tripleWidth*(y+1+row-height));
+%                     a = 1
+%                 end
+% 
+%                 if(x+col >= tripleWidth)  % padding right
+%                     p = p-((x+col) - tripleWidth +4);
+%                     b = 1
+%                 end
+% 
+% %                 r = rgb(p+1);
+%                 YDU(pos+1) = ycbcr(p+1) - 121;  % Por alguna razon, les tengo que restar este valor. Sino no da como el original.
+% %                 if(n_blocks==0)
+% %                     YDU2
+% %                 end
+%                 p = p+1;
+% %                 g = rgb(p+1);
+%                 UDU(pos+1) = ycbcr(p+1) - 131;
+% %                 if(n_blocks==0)
+% %                     UDU2
+% %                 end
+%                 p = p+1;
+% %                 b = rgb(p+1);
+%                 VDU(pos+1) = ycbcr(p+1) - 122;
+% %                 if(n_blocks==88)
+% %                     VDU2
+% %                 end
+%                 p = p+1;
+% 
+%             end
+% 
+%             %if(x==48 && y==16) 
+%             %    YDU
+%             %end
+%             
+%             
+%             DCY = processDU(YDU, QT_Y, DCY, HT_Y_DC, HT_Y_AC);
+%             DCU = processDU(UDU, QT_CbCr, DCU, HT_CBCR_DC, HT_CBCR_AC);
+%             DCV = processDU(VDU, QT_CbCr, DCV, HT_CBCR_DC, HT_CBCR_AC);
+% 
+% %             if(n_blocks==0)
+% %                 jpeg_file
+% %             end
+%             
+%             x = x+(8*3);
+%             n_blocks = n_blocks+1;
+%         end
+%         
+%         y = y+8;
+%         
+%     end
 
+    global bytepos
     % Do the bit alignment of the EOI marker
+    % tengo q traerme bytepos de writebits o pensar en algo.
     if( bytepos >= 0 )
         fillbits = zeros(1,2);
         fillbits(2) = bytepos+1;
         fillbits(1) = bitsll(bytepos+1,1)-1;
-        byteout = writeBits(byteout, fillbits);
+        jpeg_file = writeBits(jpeg_file, fillbits);
     end
 
-    byteout = writeWord(byteout, hex2dec('FFD9')); % EOI (End of Image)
+    jpeg_file = writeWord(jpeg_file, hex2dec('FFD9')); % EOI (End of Image)
     
     fileID = fopen('test.jpg','w');
-    fwrite(fileID,byteout);
+    fwrite(fileID,jpeg_file);
     fclose(fileID);
-    %byteout
+    %jpeg_file
 end
 
 %
@@ -185,6 +203,9 @@ function DCY = processDU(CDU, fdtbl, DC, HTDC, HTAC)
     DU_DCT = DCTnQuant(CDU, fdtbl);
 %     if(n_blocks==0)
 %         DU_DCT
+%     end
+%     if(n_blocks==0)
+%         DU_DCT
 %         DU_DCT2
 %     end
     
@@ -206,7 +227,7 @@ function DCY = processDU(CDU, fdtbl, DC, HTDC, HTAC)
     global category
     global bitcode
 
-    global byteout
+    global jpeg_file
     
     % Encode DC
     % http://www.impulseadventure.com/photo/jpeg-huffman-coding.html
@@ -227,11 +248,11 @@ function DCY = processDU(CDU, fdtbl, DC, HTDC, HTAC)
     DC = DU(1);
 
     if(Diff==0) 
-        byteout = writeBits(byteout, HTDC(1,:)); % Diff might be 0
+        jpeg_file = writeBits(jpeg_file, HTDC(1,:)); % Diff might be 0
     else
         pos = 32767+Diff;
-        byteout = writeBits(byteout, HTDC(category(pos+1)+1,:));
-        byteout = writeBits(byteout, bitcode(pos+1,:));
+        jpeg_file = writeBits(jpeg_file, HTDC(category(pos+1)+1,:));
+        jpeg_file = writeBits(jpeg_file, bitcode(pos+1,:));
 %         if(n_blocks==179)
 %             DU(1)
 %             DC
@@ -257,10 +278,10 @@ function DCY = processDU(CDU, fdtbl, DC, HTDC, HTAC)
 %             bytenew
 %         end
             
-        byteout = writeBits(byteout, EOB);
+        jpeg_file = writeBits(jpeg_file, EOB);
 % 
 %         if(n_blocks==0)
-%             byteout
+%             jpeg_file
 %         end
         DCY = DC;
         return;
@@ -276,21 +297,21 @@ function DCY = processDU(CDU, fdtbl, DC, HTDC, HTAC)
         if( nrzeroes >= I16 )
             lng = floor(bitsra(nrzeroes,4));
             for nrmarker=1 : lng
-                byteout = writeBits(byteout, M16zeroes);
+                jpeg_file = writeBits(jpeg_file, M16zeroes);
             end
             nrzeroes = bitand(nrzeroes, hex2dec('F'));
         end
         pos = 32767+DU(i+1);
-        byteout = writeBits(byteout, HTAC(floor(bitsll(nrzeroes,4))+category(pos+1)+1,:));
+        jpeg_file = writeBits(jpeg_file, HTAC(floor(bitsll(nrzeroes,4))+category(pos+1)+1,:));
 %         if(n_blocks==53)
 %             HTAC(floor(bitsll(nrzeroes,4))+category(pos+1)+1,:)
 %             bitcode(pos+1,:)
 %         end
-        byteout = writeBits(byteout, bitcode(pos+1,:));
+        jpeg_file = writeBits(jpeg_file, bitcode(pos+1,:));
         i = i+1;
     end
     if( end0pos~=I63 )
-        byteout = writeBits(byteout, EOB);
+        jpeg_file = writeBits(jpeg_file, EOB);
     end
     DCY = DC;
     
@@ -298,52 +319,39 @@ end
 
 function dct_quant = DCTnQuant(data, quant_table) 
 
-    global n_blocks
-    data_aux = dct2(reshape(data,8,8)');
+    data_aux = dct2(data/2);
     data_aux = reshape(data_aux',1,64);
     
-    % Quantize/descale the coefficients
-    dct_quant = zeros(1,64);
-    for i=0 : 63
-    
-        % Apply the quantization and scaling factor & Round to nearest integer
-        dct_quant(i+1) = round(data_aux(i+1)./quant_table(i+1));
-%         if (fdctquant > 0.0)
-%             dct_quant(i+1) = floor(value+0.5);
-%         else
-%             dct_quant(i+1) = ceil(value-0.5);
-%         end
-        %outputfDCTQuant(i] = fround(fdctquant);
-
+    % Quantization.
+    dct_quant = zeros(1,64,'double');
+    for i=1 : 64
+        dct_quant(i) = round(data_aux(i)./quant_table(i));
     end
     
 end
 
-
-% Porque en el codigo de javascript se ve que la imagen esta guardada pixel
-% por pixel con los valores r, g y b consecutivos.
-% Para aprovechar, convierto aca a YCbCr.
-function ycbcr = generateYCbCr(image)
-
-    image_ycbcr = rgb2ycbcr(image);
-    [height, width, channels] = size(image_ycbcr);
-    ycbcr = zeros(1,height*width*channels);
-    
-    i = 1;
-    for row=1 : height
-        for col=1 : width
-            ycbcr(i) = image_ycbcr(row,col,1);
-            i = i+1;
-            ycbcr(i) = image_ycbcr(row,col,2);
-            i = i+1;
-            ycbcr(i) = image_ycbcr(row,col,3);
-            i = i+1;
+function ycbcr = my_rgb2ycbcr(rgb)
+%     ycbcr = rgb2ycbcr(rgb);
+%     % https://stackoverflow.com/questions/18917585/why-to-minus-128-from-u-v-compent-of-yuv420p-for-converting-it-from-yuv420p-to-r
+%     % http://what-when-how.com/introduction-to-video-and-image-processing/conversion-between-rgb-and-yuvycbcr-introduction-to-video-and-image-processing/
+%     % https://www.mathworks.com/help/images/ref/rgb2ycbcr.html
+%     % Y is in the range [16/255, 235/255], and Cb and Cr are in the range [16/255, 240/255].
+%     [height, width, channels] = size(ycbcr);
+%     for r=1 : height
+%         for c=1 : width
+%             ycbcr(r,c,1) = ycbcr(r,c,1);
+%             ycbcr(r,c,2) = ycbcr(r,c,2) - 131;
+%             ycbcr(r,c,3) = ycbcr(r,c,3) - 122;
+%         end
+%     end
+    [height, width, channels] = size(rgb);
+    ycbcr = zeros(height, width, channels);
+    for r=1 : height
+        for c=1 : width
+            ycbcr(r,c,1) = ((( 0.29900)*rgb(r,c,1)+( 0.58700)*rgb(r,c,2)+( 0.11400)*rgb(r,c,3)))-121;
+            ycbcr(r,c,2) = (((-0.16874)*rgb(r,c,1)+(-0.33126)*rgb(r,c,2)+( 0.50000)*rgb(r,c,3)))-131;
+            ycbcr(r,c,3) = ((( 0.50000)*rgb(r,c,1)+(-0.41869)*rgb(r,c,2)+(-0.08131)*rgb(r,c,3)))-122;
         end
     end
-    
-    %rgb(1:64)
-    
+
 end
-
-
-
