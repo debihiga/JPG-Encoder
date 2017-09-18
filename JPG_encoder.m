@@ -66,9 +66,9 @@ function JPG_encoder(filename, quality)
     N = 8;
     for r=1 : N : height
         for c=1 : N : width
-            DCY = processDU(ycbcr(r:r+N-1, c:c+N-1, 1), QT_Y, DCY, HT_Y_DC, HT_Y_AC);
-            DCU = processDU(ycbcr(r:r+N-1, c:c+N-1, 2), QT_CbCr, DCU, HT_CBCR_DC, HT_CBCR_AC);
-            DCV = processDU(ycbcr(r:r+N-1, c:c+N-1, 3), QT_CbCr, DCV, HT_CBCR_DC, HT_CBCR_AC);
+            DCY = processDU(ycbcr(r:r+N-1, c:c+N-1, 1), QT_Y,       DCY, HT_Y_DC, HT_Y_AC);
+            DCU = processDU(ycbcr(r:r+N-1, c:c+N-1, 2), QT_CbCr,    DCU, HT_CBCR_DC, HT_CBCR_AC);
+            DCV = processDU(ycbcr(r:r+N-1, c:c+N-1, 3), QT_CbCr,    DCV, HT_CBCR_DC, HT_CBCR_AC);
             n_blocks = n_blocks+1;
         end
     end
@@ -113,6 +113,7 @@ function DCY = processDU(CDU, fdtbl, DC, HTDC, HTAC)
     I64 = 64;
     %DU_DCT = fDCTQuant(CDU, fdtbl);
     DU_DCT = DCTnQuant(CDU, fdtbl);
+    
 %     if(n_blocks==0)
 %         DU_DCT
 %         DU_DCT2
@@ -120,6 +121,7 @@ function DCY = processDU(CDU, fdtbl, DC, HTDC, HTAC)
     
     % ZigZag reorder
     global ZigZag
+    DU_DCT = reshape(DU_DCT',1,64);
     DU = zeros(1,64);
     for j=0 : I64-1
         DU(ZigZag(j+1))=DU_DCT(j+1);
@@ -226,27 +228,6 @@ function DCY = processDU(CDU, fdtbl, DC, HTDC, HTAC)
     
 end
 
-function dct_quant = DCTnQuant(block, quant_table) 
 
-    global n_blocks
-    data_aux = dct2(block);
-    data_aux = reshape(data_aux',1,64);
-    
-    % Quantize/descale the coefficients
-    dct_quant = zeros(1,64);
-    for i=0 : 63
-    
-        % Apply the quantization and scaling factor & Round to nearest integer
-        dct_quant(i+1) = round(data_aux(i+1)./quant_table(i+1));
-%         if (fdctquant > 0.0)
-%             dct_quant(i+1) = floor(value+0.5);
-%         else
-%             dct_quant(i+1) = ceil(value-0.5);
-%         end
-        %outputfDCTQuant(i] = fround(fdctquant);
-
-    end
-    
-end
 
 
