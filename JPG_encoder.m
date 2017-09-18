@@ -1,11 +1,9 @@
-% filename -> .tiff image.
 function JPG_encoder(filename, quality)
     
     close all;
     
     global QT_Y
     global QT_CbCr
-    global ZigZag
     
     global HT_Y_DC
     global HT_Y_DC_NVALUES
@@ -26,7 +24,7 @@ function JPG_encoder(filename, quality)
     global bitcode
     global category
     
-    [   QT_Y, QT_CbCr, ZigZag, ...
+    [   QT_Y, QT_CbCr, ...
         HT_Y_DC,     HT_Y_DC_NVALUES,   HT_Y_DC_VALUES, ...
         HT_Y_AC,     HT_Y_AC_NVALUES,   HT_Y_AC_VALUES, ...
         HT_CBCR_DC,    HT_CBCR_DC_NVALUES, HT_CBCR_DC_VALUES, ...
@@ -35,199 +33,60 @@ function JPG_encoder(filename, quality)
     image = imread(filename);   
     
     % Initialize bit writer
-    global byteout
-    byteout = [];
+    global output
+    output = [];
     global bytenew
     global bytepos
     writeBits(); % init this function's persistent variables.
 
     % Add JPEG headers
     [height, width, channels] = size(image);
-    byteout = writeWord(byteout, hex2dec('FFD8')); % SOI
-    byteout = writeAPP0(byteout);
-    byteout = writeDQT(byteout, QT_Y, QT_CbCr);
-    byteout = writeSOF(byteout, width, height);    
-    byteout = writeDHT(byteout, HT_Y_DC_NVALUES,   HT_Y_DC_VALUES, ...
+    output = writeWord(output, hex2dec('FFD8')); % SOI
+    output = writeAPP0(output);
+    output = writeDQT(output, QT_Y, QT_CbCr);
+    output = writeSOF(output, width, height);    
+    output = writeDHT(output, HT_Y_DC_NVALUES,   HT_Y_DC_VALUES, ...
                                 HT_Y_AC_NVALUES,   HT_Y_AC_VALUES, ...
                                 HT_CBCR_DC_NVALUES, HT_CBCR_DC_VALUES, ...
                                 HT_CBCR_AC_NVALUES, HT_CBCR_AC_VALUES);
-    byteout = writeSOS(byteout);
+    output = writeSOS(output);
     
-    % Encode 8x8 macroblocks
-    DCY = 0;
-    DCU = 0;
-    DCV = 0; 
-
     ycbcr = my_rgb2ycbcr(image);
-                     
-    global n_blocks
-    n_blocks = 0;
-    
+                         
+    DC_Y = 0;
+    DC_Cb = 0;
+    DC_Cr = 0;    
     N = 8;
     for r=1 : N : height
         for c=1 : N : width
-            DCY = processDU(ycbcr(r:r+N-1, c:c+N-1, 1), QT_Y,       DCY, HT_Y_DC, HT_Y_AC);
-            DCU = processDU(ycbcr(r:r+N-1, c:c+N-1, 2), QT_CbCr,    DCU, HT_CBCR_DC, HT_CBCR_AC);
-            DCV = processDU(ycbcr(r:r+N-1, c:c+N-1, 3), QT_CbCr,    DCV, HT_CBCR_DC, HT_CBCR_AC);
-            n_blocks = n_blocks+1;
+            DC_Y  = process(ycbcr(r:r+N-1, c:c+N-1, 1), QT_Y,    DC_Y,  HT_Y_DC,    HT_Y_AC);
+            DC_Cb = process(ycbcr(r:r+N-1, c:c+N-1, 2), QT_CbCr, DC_Cb, HT_CBCR_DC, HT_CBCR_AC);
+            DC_Cr = process(ycbcr(r:r+N-1, c:c+N-1, 3), QT_CbCr, DC_Cr, HT_CBCR_DC, HT_CBCR_AC);
         end
     end
     
-    
-    
-    
-
     % Do the bit alignment of the EOI marker
     if( bytepos >= 0 )
         fillbits = zeros(1,2);
         fillbits(2) = bytepos+1;
         fillbits(1) = bitsll(bytepos+1,1)-1;
-        byteout = writeBits(byteout, fillbits);
+        output = writeBits(output, fillbits);
     end
 
-    byteout = writeWord(byteout, hex2dec('FFD9')); % EOI (End of Image)
+    output = writeWord(output, hex2dec('FFD9')); % EOI (End of Image)
     
     fileID = fopen('test.jpg','w');
-    fwrite(fileID,byteout);
+    fwrite(fileID,output);
     fclose(fileID);
-    %byteout
 end
 
-%
-% DCY = processDU(YDU, fdtbl_Y, DCY, HT_Y_DC, HT_Y_AC);
-%
-% CDU: 8x8 block (Y, Cb, Cr)
-% fdtb1: quantization matrix(Y, Cb, Cr).
-% DC: 8x8 empty block.
-% HTDC: Huffman table (DC)
-% HTAC: Huffman table (AC)
-%
-function DCY = processDU(CDU, fdtbl, DC, HTDC, HTAC)
+function DC_new = process(block, QT, DC_last, HT_DC, HT_AC)
 
-    global n_blocks
-
-    EOB = HTAC(1,:);
-    M16zeroes = HTAC(hex2dec('F0')+1,:);
-    I16 = 16;
-    I63 = 63;
-    I64 = 64;
-    %DU_DCT = fDCTQuant(CDU, fdtbl);
-    DU_DCT = DCTnQuant(CDU, fdtbl);
-    
-%     if(n_blocks==0)
-%         DU_DCT
-%         DU_DCT2
-%     end
-    
-    % ZigZag reorder
-    global ZigZag
-    DU_DCT = reshape(DU_DCT',1,64);
-    DU = zeros(1,64);
-    for j=0 : I64-1
-        DU(ZigZag(j+1))=DU_DCT(j+1);
-    end
-
-
-    
-%     if(n_blocks==0)
-%         n_blocks
-%         Diff
-%         DC
-%     end
-
+    global output
     global category
     global bitcode
-
-    global byteout
-    
-    % Encode DC
-    % http://www.impulseadventure.com/photo/jpeg-huffman-coding.html
-    % https://users.ece.utexas.edu/~ryerraballi/MSB/pdfs/M4L1.pdf
-    % http://www.dmi.unict.it/~battiato/EI_MOBILE0708/JPEG%20(Bruna).pdf
-    % Differential Pulse Code Modulation (DPCM): 
-    % Encode the difference between the current and previous 8x8 block.
-    % Example:
-    % DC(1) = 4 (actual)
-    % DC    = 2 (previous)
-    % Diff = DU(1)-DC = 2
-    % pos = 32767+Diff = 32769
-    % category(pos+1) = 2
-    % HTDC(category(pos+1)+1,:) = [3 3]
-    % bitcode(pos+1,:) = [2 2]
-     
-    Diff = DU(1) - DC;
-    DC = DU(1);
-
-    if(Diff==0) 
-        byteout = writeBits(byteout, HTDC(1,:)); % Diff might be 0
-    else
-        pos = 32767+Diff;
-        byteout = writeBits(byteout, HTDC(category(pos+1)+1,:));
-        byteout = writeBits(byteout, bitcode(pos+1,:));
-%         if(n_blocks==179)
-%             DU(1)
-%             DC
-%             Diff
-%             category(pos+1)
-%             HTDC(category(pos+1)+1,:)
-%             bitcode(pos+1,:)
-%         end
-    end
-    
-    
-    % Encode ACs
-    end0pos = 63;       % was const... which is crazy
-    while( (end0pos>0)&&(DU(end0pos+1)==0) )
-        end0pos = end0pos-1;
-    end
-    %end0pos = first element in reverse order !=0
-    global bytepos
-    global bytenew
-    if( end0pos == 0) 
-%         if(n_blocks==0)
-%             bytepos
-%             bytenew
-%         end
-            
-        byteout = writeBits(byteout, EOB);
-% 
-%         if(n_blocks==0)
-%             byteout
-%         end
-        DCY = DC;
-        return;
-    end
-
-    i = 1;
-    while( i<=end0pos )
-        startpos = i;
-        while(DU(i+1)==0 && (i<=end0pos))
-            i = i+1;            
-        end
-        nrzeroes = i-startpos;
-        if( nrzeroes >= I16 )
-            lng = floor(bitsra(nrzeroes,4));
-            for nrmarker=1 : lng
-                byteout = writeBits(byteout, M16zeroes);
-            end
-            nrzeroes = bitand(nrzeroes, hex2dec('F'));
-        end
-        pos = 32767+DU(i+1);
-        byteout = writeBits(byteout, HTAC(floor(bitsll(nrzeroes,4))+category(pos+1)+1,:));
-%         if(n_blocks==53)
-%             HTAC(floor(bitsll(nrzeroes,4))+category(pos+1)+1,:)
-%             bitcode(pos+1,:)
-%         end
-        byteout = writeBits(byteout, bitcode(pos+1,:));
-        i = i+1;
-    end
-    if( end0pos~=I63 )
-        byteout = writeBits(byteout, EOB);
-    end
-    DCY = DC;
+    dct_quant = DCTnQuant(block, QT);   
+    zigzagged = zigzag(dct_quant);
+    [output, DC_new] = huffman(output, zigzagged, DC_last, HT_DC, HT_AC, category, bitcode);
     
 end
-
-
-
-

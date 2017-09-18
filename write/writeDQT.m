@@ -8,17 +8,15 @@ function out = writeDQT(out, QY, QCbCr)
     out = writeWord(out, 132);              % Length of data.
     
     out = writeByte(out, 0);                % Identifier (0000: 1 byte per element so 64 bytes per table, 0000: table#0)
-    for r=1 : 8
-        for c=1 : 8
-            out = writeByte(out, QY(r,c));
-        end
+    QY_zigzaged = zigzag(QY);               % https://en.wikibooks.org/wiki/JPEG_-_Idea_and_Practice/The_header_part#The_Quantization_table_segment_DQT
+    for i=1 : 64
+        out = writeByte(out, QY_zigzaged(i));
     end
     
     out = writeByte(out, 1);                % Identifier (0000: 1 byte per element so 64 bytes per table, 0001: table#1)
-    for r=1 : 8
-        for c=1 : 8
-            out = writeByte(out, QCbCr(r,c));
-        end
+    QCbCr_zigzaged = zigzag(QCbCr);         % https://en.wikibooks.org/wiki/JPEG_-_Idea_and_Practice/The_header_part#The_Quantization_table_segment_DQT
+    for i=1 : 64
+        out = writeByte(out, QCbCr_zigzaged(i));
     end
     
 end

@@ -1,6 +1,0 @@
-
-O rgb2ycbcr
-Le tuve que restar unos valores para que de igual...
-
-dct2
-cuantizacion

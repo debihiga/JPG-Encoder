@@ -1,26 +1,23 @@
-function [  QTY, QTCbCr, ZigZag, ...
+function [  QTY, QTCbCr, ...
             YDC_HT,     std_dc_luminance_nrcodes,   std_dc_luminance_values, ...
             YAC_HT,     std_ac_luminance_nrcodes,   std_ac_luminance_values, ...
             UVDC_HT,    std_dc_chrominance_nrcodes, std_dc_chrominance_values, ...
             UVAC_HT,    std_ac_chrominance_nrcodes, std_ac_chrominance_values, ...
             bitcode, category] = init(quality)
-
-    addpath(genpath('/write/'));
-    
+   
     % Quantization
     
-    addpath(genpath('/quantization/'));
-    [QTY, QTCbCr, ZigZag] = initQT(quality);
+    [QTY, QTCbCr] = initQT(quality);
 
     % Huffman
     
-    addpath(genpath('/huffman/'));    
     [   YDC_HT,     std_dc_luminance_nrcodes,   std_dc_luminance_values, ...
         YAC_HT,     std_ac_luminance_nrcodes,   std_ac_luminance_values, ...
         UVDC_HT,    std_dc_chrominance_nrcodes, std_dc_chrominance_values, ...
         UVAC_HT,    std_ac_chrominance_nrcodes, std_ac_chrominance_values] = initHT();
     
     [bitcode, category] = initCategoryNumber();
+
 end
 
 function [bitcode, category] = initCategoryNumber()

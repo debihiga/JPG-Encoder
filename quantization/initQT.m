@@ -1,20 +1,7 @@
 
-function [QT_Y, QT_CbCr, ZigZag] = initQT(quality)
+function [QT_Y, QT_CbCr] = initQT(quality)
 
     scale_factor = getScaleFactor(quality);
-
-    ZigZag = [
-        0   1   5   6   14  15  27  28 ...
-        2   4   7   13  16  26  29  42 ...
-        3   8   12  17  25  30  41  43 ...
-        9   11  18  24  31  40  44  53 ...
-        10  19  23  32  39  45  52  54 ...
-        20  22  33  38  46  51  55  60 ...
-        21  34  37  47  50  56  59  61 ...
-        35  36  48  49  57  58  62  63
-        ];
-    ZigZag = add1ToArray(ZigZag);
-
     
     Q1 = [
         16  11  10  16  24  40  51  61;
@@ -26,20 +13,7 @@ function [QT_Y, QT_CbCr, ZigZag] = initQT(quality)
         49  64  78  87  103 121 120 101;
         72  92  95  98  112 100 103 99
         ];
-    [height, width] = size(Q1);
-    QT_Y = zeros(height, width);
-    for r=1 : height
-        for c=1 : width
-            t = floor((Q1(r,c)*scale_factor+50)/100);
-            if t < 1
-                t = 1;
-            elseif t > 255
-                t = 255;
-            end
-%             QT_Y(ZigZag(i)) = t;
-            QT_Y(r,c) = t; %se ve peor
-        end
-    end
+    QT_Y = scale(Q1, scale_factor);
 
     Q2 = [
         17  18  24  47  99  99  99  99;
@@ -51,32 +25,8 @@ function [QT_Y, QT_CbCr, ZigZag] = initQT(quality)
         99  99  99  99  99  99  99  99;
         99  99  99  99  99  99  99  99
         ];
-%     QT_CbCr = zeros(1,64);
-%     for i=1 : 64
-%         t = floor((Q2(i)*scale_factor+50)/100);
-%         if t < 1
-%             t = 1;
-%         elseif t > 255
-%             t = 255;
-%         end    
-%         QT_CbCr(ZigZag(i)) = t;
-% %         QT_CbCr(i) = t; %se ve peor
-%     end
-    [height, width] = size(Q2);
-    QT_CbCr = zeros(height, width);
-    for r=1 : height
-        for c=1 : width
-            t = floor((Q2(r,c)*scale_factor+50)/100);
-            if t < 1
-                t = 1;
-            elseif t > 255
-                t = 255;
-            end
-%             QT_CbCr(ZigZag(i)) = t;
-            QT_CbCr(r,c) = t; %se ve peor
-        end
-    end
-        
+      QT_CbCr = scale(Q2, scale_factor);
+      
 end
 
 function scale_factor = getScaleFactor(quality)
@@ -97,11 +47,18 @@ function scale_factor = getScaleFactor(quality)
     
 end
 
-function array = add1ToArray(array)
-    [rows, cols] = size(array);
-    for i=1 : cols
-        array(i) = array(i) + 1;
+function scaled = scale(matrix, factor)
+    [height, width] = size(matrix);
+    scaled = zeros(height, width);
+    for r=1 : height
+        for c=1 : width
+            t = floor((matrix(r,c)*factor+50)/100);
+            if t < 1
+                t = 1;
+            elseif t > 255
+                t = 255;
+            end
+            scaled(r,c) = t;
+        end
     end
-    % MATLAB empieza los indices con 1... asi que tengo que sumarle a todo
-    % un 1.
 end

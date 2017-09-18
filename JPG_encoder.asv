@@ -5,7 +5,6 @@ function JPG_encoder(filename, quality)
     
     global QT_Y
     global QT_CbCr
-    global ZigZag
     
     global HT_Y_DC
     global HT_Y_DC_NVALUES
@@ -26,7 +25,7 @@ function JPG_encoder(filename, quality)
     global bitcode
     global category
     
-    [   QT_Y, QT_CbCr, ZigZag, ...
+    [   QT_Y, QT_CbCr, ...
         HT_Y_DC,     HT_Y_DC_NVALUES,   HT_Y_DC_VALUES, ...
         HT_Y_AC,     HT_Y_AC_NVALUES,   HT_Y_AC_VALUES, ...
         HT_CBCR_DC,    HT_CBCR_DC_NVALUES, HT_CBCR_DC_VALUES, ...
@@ -53,30 +52,24 @@ function JPG_encoder(filename, quality)
                                 HT_CBCR_AC_NVALUES, HT_CBCR_AC_VALUES);
     byteout = writeSOS(byteout);
     
-    % Encode 8x8 macroblocks
-    DCY = 0;
-    DCU = 0;
-    DCV = 0; 
-
     ycbcr = my_rgb2ycbcr(image);
                      
     global n_blocks
     n_blocks = 0;
     
+    DCY = 0;
+    DCU = 0;
+    DCV = 0;    
     N = 8;
     for r=1 : N : height
         for c=1 : N : width
-            DCY = processDU(ycbcr(r:r+N-1, c:c+N-1, 1), QT_Y, DCY, HT_Y_DC, HT_Y_AC);
-            DCU = processDU(ycbcr(r:r+N-1, c:c+N-1, 2), QT_CbCr, DCU, HT_CBCR_DC, HT_CBCR_AC);
-            DCV = processDU(ycbcr(r:r+N-1, c:c+N-1, 3), QT_CbCr, DCV, HT_CBCR_DC, HT_CBCR_AC);
+            DCY = processDU(ycbcr(r:r+N-1, c:c+N-1, 1), QT_Y,       DCY, HT_Y_DC, HT_Y_AC);
+            DCU = processDU(ycbcr(r:r+N-1, c:c+N-1, 2), QT_CbCr,    DCU, HT_CBCR_DC, HT_CBCR_AC);
+            DCV = processDU(ycbcr(r:r+N-1, c:c+N-1, 3), QT_CbCr,    DCV, HT_CBCR_DC, HT_CBCR_AC);
             n_blocks = n_blocks+1;
         end
     end
     
-    
-    
-    
-
     % Do the bit alignment of the EOI marker
     if( bytepos >= 0 )
         fillbits = zeros(1,2);
@@ -102,30 +95,17 @@ end
 % HTDC: Huffman table (DC)
 % HTAC: Huffman table (AC)
 %
-function DCY = processDU(CDU, fdtbl, DC, HTDC, HTAC)
+function DCY = processDU(CDU, QT, DC, HTDC, HTAC)
 
     global n_blocks
 
-    EOB = HTAC(1,:);
+
     M16zeroes = HTAC(hex2dec('F0')+1,:);
     I16 = 16;
     I63 = 63;
-    I64 = 64;
-    %DU_DCT = fDCTQuant(CDU, fdtbl);
-    DU_DCT = DCTnQuant(CDU, fdtbl);
-%     if(n_blocks==0)
-%         DU_DCT
-%         DU_DCT2
-%     end
     
-    % ZigZag reorder
-    global ZigZag
-    DU = zeros(1,64);
-    for j=0 : I64-1
-        DU(ZigZag(j+1))=DU_DCT(j+1);
-    end
-
-
+    DU_DCT = DCTnQuant(CDU, QT);   
+    DU = zigzag(DU_DCT);
     
 %     if(n_blocks==0)
 %         n_blocks
@@ -223,33 +203,5 @@ function DCY = processDU(CDU, fdtbl, DC, HTDC, HTAC)
         byteout = writeBits(byteout, EOB);
     end
     DCY = DC;
-    
-end
-
-function dct_quant = DCTnQuant(block, quant_table) 
-
-    global n_blocks
-    data_aux = dct2(block);
-    data_aux = reshape(data_aux',1,64);
-    
-    % Quantize/descale the coefficients
-    dct_quant = zeros(1,64);
-    for i=0 : 63
-    
-        % Apply the quantization and scaling factor & Round to nearest integer
-        dct_quant(i+1) = round(data_aux(i+1)./quant_table(i+1));
-%         if (fdctquant > 0.0)
-%             dct_quant(i+1) = floor(value+0.5);
-%         else
-%             dct_quant(i+1) = ceil(value-0.5);
-%         end
-        %outputfDCTQuant(i] = fround(fdctquant);
-
-    end
-    
-end
-
-function quantized = quantize(block, quant_table)
-
     
 end
