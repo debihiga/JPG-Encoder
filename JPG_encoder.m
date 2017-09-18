@@ -57,95 +57,25 @@ function JPG_encoder(filename, quality)
     DCY = 0;
     DCU = 0;
     DCV = 0; 
-    % creo que son global
-    %bytenew = 0;
-    %bytepos = 7;
 
-    quadWidth = width*4;
-    tripleWidth = width*3;
-
-    y = 0;
-
-   % rgb = generateRGB(image);
-    ycbcr = generateYCbCr(image);
+    ycbcr = my_rgb2ycbcr(image);
                      
     global n_blocks
     n_blocks = 0;
     
-    while(y < height)
-        
-        x = 0;
-        
-        while(x < tripleWidth)
-            
-            start = tripleWidth * y + x;
-            p = start;
-
-            YDU = zeros(1,64);
-            UDU = zeros(1,64);
-            VDU = zeros(1,64);
-      
-            YDU2 = zeros(1,64);
-            UDU2 = zeros(1,64);
-            VDU2 = zeros(1,64);
-            
-            for pos=0 : 63
-                
-                row = floor(bitsra(pos,3));    % /8
-                col = bitand(pos,7)*3;  % %8
-                p = start + ( row * tripleWidth ) + col;
-
-                if(y+row >= height)     % padding bottom
-                    p = p-(tripleWidth*(y+1+row-height));
-                    a = 1
-                end
-
-                if(x+col >= tripleWidth)  % padding right
-                    p = p-((x+col) - tripleWidth +4);
-                    b = 1
-                end
-
-%                 r = rgb(p+1);
-                YDU(pos+1) = ycbcr(p+1) - 121;  % Por alguna razon, les tengo que restar este valor. Sino no da como el original.
-%                 if(n_blocks==0)
-%                     YDU2
-%                 end
-                p = p+1;
-%                 g = rgb(p+1);
-                UDU(pos+1) = ycbcr(p+1) - 131;
-%                 if(n_blocks==0)
-%                     UDU2
-%                 end
-                p = p+1;
-%                 b = rgb(p+1);
-                VDU(pos+1) = ycbcr(p+1) - 122;
-%                 if(n_blocks==88)
-%                     VDU2
-%                 end
-                p = p+1;
-
-            end
-
-            %if(x==48 && y==16) 
-            %    YDU
-            %end
-            
-            
-            DCY = processDU(YDU, QT_Y, DCY, HT_Y_DC, HT_Y_AC);
-            DCU = processDU(UDU, QT_CbCr, DCU, HT_CBCR_DC, HT_CBCR_AC);
-            DCV = processDU(VDU, QT_CbCr, DCV, HT_CBCR_DC, HT_CBCR_AC);
-
-%             if(n_blocks==0)
-%                 byteout
-%             end
-            
-            x = x+(8*3);
+    N = 8;
+    for r=1 : N : height
+        for c=1 : N : width
+            DCY = processDU(ycbcr(r:r+N-1, c:c+N-1, 1), QT_Y, DCY, HT_Y_DC, HT_Y_AC);
+            DCU = processDU(ycbcr(r:r+N-1, c:c+N-1, 2), QT_CbCr, DCU, HT_CBCR_DC, HT_CBCR_AC);
+            DCV = processDU(ycbcr(r:r+N-1, c:c+N-1, 3), QT_CbCr, DCV, HT_CBCR_DC, HT_CBCR_AC);
             n_blocks = n_blocks+1;
         end
-        
-        y = y+8;
-        
     end
+    
+    
+    
+    
 
     % Do the bit alignment of the EOI marker
     if( bytepos >= 0 )
@@ -296,10 +226,10 @@ function DCY = processDU(CDU, fdtbl, DC, HTDC, HTAC)
     
 end
 
-function dct_quant = DCTnQuant(data, quant_table) 
+function dct_quant = DCTnQuant(block, quant_table) 
 
     global n_blocks
-    data_aux = dct2(reshape(data,8,8)');
+    data_aux = dct2(block);
     data_aux = reshape(data_aux',1,64);
     
     % Quantize/descale the coefficients
@@ -318,32 +248,5 @@ function dct_quant = DCTnQuant(data, quant_table)
     end
     
 end
-
-
-% Porque en el codigo de javascript se ve que la imagen esta guardada pixel
-% por pixel con los valores r, g y b consecutivos.
-% Para aprovechar, convierto aca a YCbCr.
-function ycbcr = generateYCbCr(image)
-
-    image_ycbcr = rgb2ycbcr(image);
-    [height, width, channels] = size(image_ycbcr);
-    ycbcr = zeros(1,height*width*channels);
-    
-    i = 1;
-    for row=1 : height
-        for col=1 : width
-            ycbcr(i) = image_ycbcr(row,col,1);
-            i = i+1;
-            ycbcr(i) = image_ycbcr(row,col,2);
-            i = i+1;
-            ycbcr(i) = image_ycbcr(row,col,3);
-            i = i+1;
-        end
-    end
-    
-    %rgb(1:64)
-    
-end
-
 
 

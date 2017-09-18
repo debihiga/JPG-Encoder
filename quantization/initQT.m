@@ -35,7 +35,7 @@ function [QT_Y, QT_CbCr, ZigZag] = initQT(quality)
             t = 255;
         end
         QT_Y(ZigZag(i)) = t;
-        %QY(i) = t; se ve peor
+%        QT_Y(i) = t; %se ve peor
     end
 
     Q2 = [
@@ -57,7 +57,7 @@ function [QT_Y, QT_CbCr, ZigZag] = initQT(quality)
             t = 255;
         end    
         QT_CbCr(ZigZag(i)) = t;
-        %QT_CbCr(i) = t; se ve peor
+%         QT_CbCr(i) = t; %se ve peor
     end
         
 end
