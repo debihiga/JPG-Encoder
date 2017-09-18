@@ -26,17 +26,16 @@ function [QT_Y, QT_CbCr, ZigZag] = initQT(quality)
         49  64  78  87  103 121 120 101 ...
         72  92  95  98  112 100 103 99
         ];
-    
-%     QT_Y = QT_Y*scale_factor; %se ve peor
+    QT_Y = zeros(1,64);   
     for i=1 : 64   
-        t = floor(Q1(i)*scale_factor);
+        t = floor((Q1(i)*scale_factor+50)/100);
         if t < 1
             t = 1;
         elseif t > 255
             t = 255;
         end
         QT_Y(ZigZag(i)) = t;
-%         QT_Y(i) = Q1(i)*scale_factor; %se ve peor
+        %QY(i) = t; se ve peor
     end
 
     Q2 = [
@@ -49,17 +48,16 @@ function [QT_Y, QT_CbCr, ZigZag] = initQT(quality)
         99  99  99  99  99  99  99  99 ...
         99  99  99  99  99  99  99  99
         ];
-%     QT_CbCr = QT_CbCr*scale_factor;
-%     QT_CbCr = zeros(1,64);
+    QT_CbCr = zeros(1,64);
     for i=1 : 64
-        t = floor(Q2(i)*scale_factor);
+        t = floor((Q2(i)*scale_factor+50)/100);
         if t < 1
             t = 1;
         elseif t > 255
             t = 255;
         end    
         QT_CbCr(ZigZag(i)) = t;
-%         QT_CbCr(i) = t; %se ve peor
+        %QT_CbCr(i) = t; se ve peor
     end
         
 end
@@ -71,11 +69,13 @@ function scale_factor = getScaleFactor(quality)
     elseif quality > 100
         quality = 100;
     end
-        
+    
+    scale_factor = 0;     % alpha
+    
     if quality < 50
-        scale_factor = floor(50/quality);
+        scale_factor = floor(5000 / quality);
     else 
-        scale_factor = floor(2-(quality/50));
+        scale_factor = floor(200 - quality*2);
     end
     
 end
